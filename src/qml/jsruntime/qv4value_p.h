@@ -58,6 +58,8 @@
 
 #if QT_POINTER_SIZE == 8
 #define QV4_USE_64_BIT_VALUE_ENCODING
+#elif QT_POINTER_SIZE == 16
+#define QV4_USE_128_BIT_VALUE_ENCODING
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -72,6 +74,8 @@ struct Q_QML_PRIVATE_EXPORT Value
 {
 private:
     /*
+        //NOTE-CHERI: We could do this without so much magic, but for now let's just 
+        //make it compatible while outwardly appearing to be the same.
         We use two different ways of encoding JS values. One for 32bit and one for 64bit systems.
 
         In both cases, we use 8 bytes for a value and a different variant of NaN boxing. A Double
@@ -154,12 +158,17 @@ private:
           and managed), and bit 49 set to 1 (where undefined and managed have it set to 0)
         - Null, Bool, and Int have bit 48 set, indicating integer-convertible
     */
-
+#ifndef QV4_USE_128_BIT_VALUE_ENCODING
     quint64 _val;
+    #define _qval ( _val )
+#else 
+    uintcap_t _val;
+    #define _qval ( quint64(_val & 0x0000000000000000FFFFFFFFFFFFFFFF) )
+#endif
 
 public:
-    QML_NEARLY_ALWAYS_INLINE quint64 &rawValueRef() { return _val; }
-    QML_NEARLY_ALWAYS_INLINE quint64 rawValue() const { return _val; }
+    QML_NEARLY_ALWAYS_INLINE quint64 &rawValueRef() { return _qval; }
+    QML_NEARLY_ALWAYS_INLINE quint64 rawValue() const { return _qval; }
     QML_NEARLY_ALWAYS_INLINE void setRawValue(quint64 raw) { _val = raw; }
 
 #if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
@@ -183,6 +192,17 @@ public:
     QML_NEARLY_ALWAYS_INLINE void setM(Heap::Base *b)
     {
         memcpy(&_val, &b, 8);
+    }
+#elif defined(QV4_USE_128_BIT_VALUE_ENCODING)
+     QML_NEARLY_ALWAYS_INLINE Heap::Base *m() const
+    {
+        Heap::Base *b;
+        memcpy(&b, &_val, 16);
+        return b;
+    }
+    QML_NEARLY_ALWAYS_INLINE void setM(Heap::Base *b)
+    {
+        memcpy(&_val, &b, 16);
     }
 #else // !QV4_USE_64_BIT_VALUE_ENCODING
     QML_NEARLY_ALWAYS_INLINE Heap::Base *m() const
@@ -302,6 +322,12 @@ public:
     };
     static const quint64 Immediate_Mask = Immediate_Mask_64;
     using ValueTypeInternal = ValueTypeInternal_64;
+#elif QV4_USE_128_BIT_VALUE_ENCODING //TODO-PBB IMPLEMENT
+    enum {
+        Managed_Type_Internal  = Managed_Type_Internal_64
+    };
+    static const quint64 Immediate_Mask = Immediate_Mask_64;
+    using ValueTypeInternal = ValueTypeInternal_64;
 #else
     enum {
         Managed_Type_Internal  = Managed_Type_Internal_32
@@ -337,6 +363,22 @@ public:
         return a.isDouble() && b.isDouble();
     }
     inline bool isNaN() const { return (tag() & 0x7ffc0000  ) == 0x00040000; }
+#elif defined QV4_USE_128_BIT_VALUE_ENCODING
+    inline bool isUndefined() const { return _val == 0; }
+    inline bool isDouble() const { return (_val >> IsDouble_Shift); }
+    inline bool isManaged() const { return !isUndefined() && ((_val >> IsManagedOrUndefined_Shift) == 0) && cheri_gettag(_val); }
+    inline bool isManagedOrUndefined() const { return ((_val >> IsManagedOrUndefined_Shift) == 0); }
+
+    inline bool integerCompatible() const {
+        return (_val >> IsIntegerConvertible_Shift) == 3;
+    }
+    static inline bool integerCompatible(Value a, Value b) {
+        return a.integerCompatible() && b.integerCompatible();
+    }
+    static inline bool bothDouble(Value a, Value b) {
+        return a.isDouble() && b.isDouble();
+    }
+    inline bool isNaN() const { return (tag() & 0x7ffc0000  ) == 0x00040000; }   
 #else
     inline bool isUndefined() const { return tag() == Managed_Type_Internal && value() == 0; }
     inline bool isDouble() const { return (tag() & NotDouble_Mask) != NotDouble_Mask; }

@@ -269,7 +269,9 @@ private:
 
 #if QT_POINTER_SIZE == 4
 Q_STATIC_ASSERT(sizeof(QQmlPropertyRawData) == 24);
-#else // QT_POINTER_SIZE == 8
+#elif QT_POINTER_SIZE == 16
+Q_STATIC_ASSERT(sizeof(QQmlPropertyRawData) == 48);
+#else // QT_POINTER_SIZE == 8 (Oh, really?)
 Q_STATIC_ASSERT(sizeof(QQmlPropertyRawData) == 32);
 #endif
 

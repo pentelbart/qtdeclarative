@@ -135,6 +135,8 @@ DECLARE_HEAP_OBJECT(ExecutionContext, Base) {
     bool strictMode : 8;
 #if QT_POINTER_SIZE == 8
     quint8 padding_[6];
+#elif QT_POINTER_SIZE == 16
+    quint8 padding_[14];
 #else
     quint8 padding_[2];
 #endif
@@ -174,6 +176,10 @@ Q_STATIC_ASSERT(sizeof(SimpleCallContext) == sizeof(ExecutionContext) + sizeof(S
 
 #if QT_POINTER_SIZE == 8
 #define CallContextMembers(class, Member) \
+    Member(class, Pointer, FunctionObject *, function) \
+    Member(class, ValueArray, ValueArray, locals)
+#elif QT_POINTER_SIZE == 16
+    #define CallContextMembers(class, Member) \
     Member(class, Pointer, FunctionObject *, function) \
     Member(class, ValueArray, ValueArray, locals)
 #else
